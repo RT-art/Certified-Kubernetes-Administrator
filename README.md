@@ -94,4 +94,101 @@ kubectl get rs
 レプリカセットをスケール数を増減
 kubectl scale rs new-replica-set --replicas=5
 
+## deployment
+
+Deployment
+
+   └── ReplicaSet
+
+         └── Pod
+
+
+Deployment
+→ 「アプリケーションをこういう形で動かしたい（ローリングアップデートで管理してね）」って仕様を宣言するコントローラ。
+
+ReplicaSet
+→ 「Podを常に n 個保つ」役割。Deploymentの配下で、実際にPodを維持する。
+
+Pod
+→ 実際にコンテナが動く最小単位。
+
+kubectl get deploy
+
+kubectl get all
+
+ブックマークするページ（run apply dry-runなどのコマンド）
+https://kubernetes.io/docs/reference/kubectl/conventions/
+
+kubectl create deployment --image=nginx nginx --replicas=4 --dry-run=client -o yaml > nginx-deployment.yaml
+
+yamlは基本runコマンドで生成したものを修正して使う。
+
+## service
+
+nodeport
+ノード ポート
+つまり、外部接続に使われるノード自体のポート
+
+ノードポート→サービス→pod
+
+サービス側から視点
+targetport→podのport
+port→サービスのport
+
+yaml
+ラベルはつけてもつけなくてもいい
+```
+# nodeport
+
+apiVersion: v1
+kind: Service
+metadata:# ラベルはつけてもつけなくてもいい
+  name: my-service
+spec:
+  type: NodePort
+  selector:
+    app: nginx   # 管理対象Podのラベル
+  ports:
+    - targetPort: 80    # Podのポート
+      Port: 80    # 自分のport
+      nodePort: 30080   # ノードの外部からアクセスするポート (30000-32767)
+```
+
+clusterIP
+podは、IPがめちゃくちゃ変わる
+グループで抽象化する仕組みが、clusterIP
+
+ロードバランサー
+外部からの入り口
+type: NodePort にすると、クラスタの全Nodeで同じポート番号（例:30080）が開く
+
+だからアクセスの仕方はこうなる👇
+
+http://<Node1のIP>:30080
+http://<Node2のIP>:30080
+http://<Node3のIP>:30080
+
+
+つまり「ノードの数だけ外部からの入口URL」ができちゃう
+
+👉 これだと利用者からすると 「どのノードにアクセスすればいいの？」問題 が発生する
+type: LoadBalancer を使うと、クラウド（AWS/GCP/Azureなど）が 外部ロードバランサ を自動で立ち上げてくれる
+
+外部ユーザーは 1つの固定のエンドポイント（VIPやDNS名） にアクセスするだけでOK
+
+そのLBがクラスタ内のNodePortに分散して、さらにPodに流してくれる
+
+kubectl get svc
+
+## namespace
+
+kubectl get nc
+
+kubectl get pods --namespace=
+kubectl get pods -n=
+
+kubectl get pods --all-namespaces
+kubectl get pods -A
+
+
 
