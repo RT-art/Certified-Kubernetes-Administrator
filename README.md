@@ -2,147 +2,169 @@
 
 # 🎓 Certified Kubernetes Administrator (CKA)
 
-試験合格のためのチートシートです
+CKA合格のための勉強メモ
 
 </div>
 
-## pod
-ノードを確認
+## 📦 Pod
+
+### ノードの確認
+```bash
 kubectl get pods -o wide
--o アウトプット 
+```
 
--o yaml → YAML形式で全情報を出す
--o json → JSON形式で出す
--o wide → 表形式のまま、ちょっと情報を広げて表示する
+### 出力オプション（-o）
+- **yaml** → YAML形式で全情報を出力
+- **json** → JSON形式で出力  
+- **wide** → 表形式のまま、情報を広げて表示
 
-wideの表示内容
-Podがどのノードに乗ってるか
-PodのIP
-コンテナのイメージ
+> **wideの表示内容**
+> - Podがどのノードに配置されているか
+> - PodのIPアドレス
+> - コンテナのイメージ
 
-yamlで出力
+### YAML出力
+```bash
 kubectl run redis --image=redis123 --dry-run -o yaml
-→これは非推奨。
+```
+> ⚠️ このコマンドは非推奨です
 
-クライアントとサーバがある
-client ローカルで雛形生成・形だけ確認
-server クラスタで本番と同じ検証（ただし保存しない）
+### dry-runの種類
+- **client** → ローカルで雛形生成・形だけ確認
+- **server** → クラスタで本番と同じ検証（ただし保存しない）
 
-ターミナルにyamlを吐くだけ
+### ファイル作成の流れ
+```bash
+# ターミナルにYAMLを出力
 kubectl run redis --image=redis123 --dry-run=client -o yaml
 
-実際にファイルを作る
+# 実際にファイルを作成
 kubectl run redis --image=redis123 --dry-run=client -o yaml > redis.yaml
 cat redis.yaml
 kubectl create -f redis.yaml
+```
 
-既存のpodを修正したいとき
-マニフェストファイルで編集
+### Podの修正方法
+#### マニフェストファイルで編集
+```bash
 vi redis.yaml
 kubectl apply -f redis.yaml
+```
 
-サクッとコマンドで修正
+#### コマンドで直接修正
+```bash
 kubectl edit
+```
 
-## replicaset
+## 🔄 ReplicaSet
 
-replicasetの数を見る
+### 基本的なコマンド
+```bash
+# ReplicaSetの数を確認
 kubectl get replicaset
 
-replicasetの詳細内容を確認する
+# 詳細内容を確認
 kubectl describe replicaset new-replicaset
 
-replicasetをファイルで作成する
+# ファイルから作成
 kubectl create -f /root/replicaset.yaml
 
-kubectl explainは、Kubernetesリソースの仕様・フィールドの意味を教えてくれる
-kubectl explain replicaset
-
-→YAML関連は explain、コマンド忘れたら help
-
-apiVersion: v1
-KubernetesのコアAPIグループ
-pod
-sevice
-ConfigMap
-secret
-Namespace
-など
-
-apiVersion: apps/v1
-より「高度なオブジェクト（コントローラ系）」がここに入ってる
-Deployment
-StatefulSet
-DaemonSet
-ReplicaSet
-など
-
-ReplicaSet は「特定のラベルを持つ Pod を監視して、指定した数（replicas）だけ存在するようにする」コントローラ。
-つまり ReplicaSet は
-spec.selector（どんなPodを管理するか条件を定義）
-spec.template（その条件に合うPodを自分で作るときのテンプレート）
-の2つを使って動いてる。
-
-セレクターは、今から作られるものだけでなく、既存のpodも管理対象に入れられるようになっている
-テンプレートは、作った瞬間、セレクターの管理配下
-
-spec = そのリソースの望ましい状態
-
-rsで、replicaset省略可能
+# 省略形
 kubectl get rs
-
-レプリカセットをスケール数を増減
-kubectl scale rs new-replica-set --replicas=5
-
-## deployment
-
-Deployment
-
-   └── ReplicaSet
-
-         └── Pod
-
-
-Deployment
-→ 「アプリケーションをこういう形で動かしたい（ローリングアップデートで管理してね）」って仕様を宣言するコントローラ。
-
-ReplicaSet
-→ 「Podを常に n 個保つ」役割。Deploymentの配下で、実際にPodを維持する。
-
-Pod
-→ 実際にコンテナが動く最小単位。
-
-kubectl get deploy
-
-kubectl get all
-
-ブックマークするページ（run apply dry-runなどのコマンド）
-https://kubernetes.io/docs/reference/kubectl/conventions/
-
-kubectl create deployment --image=nginx nginx --replicas=4 --dry-run=client -o yaml > nginx-deployment.yaml
-
-yamlは基本runコマンドで生成したものを修正して使う。
-
-## service
-
-nodeport
-ノード ポート
-つまり、外部接続に使われるノード自体のポート
-
-ノードポート→サービス→pod
-
-サービス側から視点
-targetport→podのport
-port→サービスのport
-
-yaml
-ラベルはつけてもつけなくてもいい
 ```
-# nodeport
 
+### kubectl explain
+Kubernetesリソースの仕様・フィールドの意味を教えてくれるコマンド
+```bash
+kubectl explain replicaset
+```
+> 💡 **覚え方**: YAML関連は `explain`、コマンド忘れたら `help`
+
+### APIバージョンの違い
+
+#### `apiVersion: v1`
+KubernetesのコアAPIグループ
+- Pod
+- Service
+- ConfigMap
+- Secret
+- Namespace
+- など
+
+#### `apiVersion: apps/v1`
+より「高度なオブジェクト（コントローラ系）」
+- Deployment
+- StatefulSet
+- DaemonSet
+- ReplicaSet
+- など
+
+### ReplicaSetの仕組み
+ReplicaSetは「**特定のラベルを持つPodを監視して、指定した数（replicas）だけ存在するようにする**」コントローラです。
+
+#### 重要な2つの要素
+1. **spec.selector** → どんなPodを管理するか条件を定義
+2. **spec.template** → その条件に合うPodを自分で作るときのテンプレート
+
+> **ポイント**:
+> - セレクターは、今から作られるものだけでなく、既存のPodも管理対象に入れられる
+> - テンプレートは、作った瞬間にセレクターの管理配下になる
+> - `spec` = そのリソースの望ましい状態
+
+### スケーリング
+```bash
+kubectl scale rs new-replica-set --replicas=5
+```
+
+## 🚀 Deployment
+
+### 階層構造
+```
+Deployment
+   └── ReplicaSet
+         └── Pod
+```
+
+### 各コンポーネントの役割
+- **Deployment** → 「アプリケーションをこういう形で動かしたい（ローリングアップデートで管理してね）」って仕様を宣言するコントローラ
+- **ReplicaSet** → 「Podを常にn個保つ」役割。Deploymentの配下で、実際にPodを維持する
+- **Pod** → 実際にコンテナが動く最小単位
+
+### 基本的なコマンド
+```bash
+kubectl get deploy
+kubectl get all
+```
+
+### 参考リンク
+> 📚 **ブックマーク**: [kubectl conventions](https://kubernetes.io/docs/reference/kubectl/conventions/)
+
+### Deployment作成
+```bash
+kubectl create deployment --image=nginx nginx --replicas=4 --dry-run=client -o yaml > nginx-deployment.yaml
+```
+
+> 💡 **コツ**: YAMLは基本runコマンドで生成したものを修正して使う
+
+## 🌐 Service
+
+### NodePort
+**ノードポート** = 外部接続に使われるノード自体のポート
+
+#### 接続の流れ
+```
+ノードポート → サービス → Pod
+```
+
+#### ポートの関係
+- **targetPort** → Podのポート
+- **port** → サービスのポート
+
+#### NodePortのYAML例
+```yaml
 apiVersion: v1
 kind: Service
-metadata:# ラベルはつけてもつけなくてもいい
+metadata:
   name: my-service
 spec:
   type: NodePort
@@ -150,52 +172,156 @@ spec:
     app: nginx   # 管理対象Podのラベル
   ports:
     - targetPort: 80    # Podのポート
-      Port: 80    # 自分のport
+      port: 80          # サービスのポート
       nodePort: 30080   # ノードの外部からアクセスするポート (30000-32767)
 ```
 
-clusterIP
-podは、IPがめちゃくちゃ変わる
-グループで抽象化する仕組みが、clusterIP
+### ClusterIP
+PodのIPは頻繁に変わるため、グループで抽象化する仕組みがClusterIPです。
 
-ロードバランサー
-外部からの入り口
-type: NodePort にすると、クラスタの全Nodeで同じポート番号（例:30080）が開く
+### LoadBalancer
+外部からの入り口として使用します。
 
-だからアクセスの仕方はこうなる👇
+#### NodePortの問題点
+`type: NodePort`にすると、クラスタの全Nodeで同じポート番号（例:30080）が開きます。
 
+**アクセス方法**:
+```
 http://<Node1のIP>:30080
 http://<Node2のIP>:30080
 http://<Node3のIP>:30080
+```
 
+> ⚠️ **問題**: 「ノードの数だけ外部からの入口URL」ができてしまい、利用者からすると「どのノードにアクセスすればいいの？」という問題が発生
 
-つまり「ノードの数だけ外部からの入口URL」ができちゃう
+#### LoadBalancerの解決策
+`type: LoadBalancer`を使うと、クラウド（AWS/GCP/Azureなど）が**外部ロードバランサ**を自動で立ち上げてくれます。
 
-👉 これだと利用者からすると 「どのノードにアクセスすればいいの？」問題 が発生する
-type: LoadBalancer を使うと、クラウド（AWS/GCP/Azureなど）が 外部ロードバランサ を自動で立ち上げてくれる
+- 外部ユーザーは**1つの固定のエンドポイント（VIPやDNS名）**にアクセスするだけでOK
+- そのLBがクラスタ内のNodePortに分散して、さらにPodに流してくれる
 
-外部ユーザーは 1つの固定のエンドポイント（VIPやDNS名） にアクセスするだけでOK
-
-そのLBがクラスタ内のNodePortに分散して、さらにPodに流してくれる
-
+### Service確認
+```bash
 kubectl get svc
+```
 
-## namespace
+## 🏷️ Namespace
 
-kubectl get nc
+### 基本的なコマンド
+```bash
+# Namespace一覧
+kubectl get ns
 
-kubectl get pods --namespace=
-kubectl get pods -n=
+# 特定のNamespaceのPodを確認
+kubectl get pods --namespace=<namespace>
+kubectl get pods -n=<namespace>
 
+# 全NamespaceのPodを確認
 kubectl get pods --all-namespaces
 kubectl get pods -A
+```
 
-## 命令形コマンド
+## ⚡ 命令形コマンド
 
-label付きpod
+### ラベル付きPod作成
+```bash
 kubectl run redis --image=redis:alpine --labels="tier=db"
+```
 
-サービスを命令系で作る→expose
+### サービスを命令形で作成（expose）
+```bash
+kubectl run httpd --image=httpd:alpine --port=80 --expose=true
+```
 
-kubectl run httpd --image=httpd:aipine --port=80 --expose=true
+### 参考リンク
+> 📚 **ブックマーク**: [kubectl commands](https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands)
 
+## 📋 スケジューラ
+
+### スケジューラとは
+どのPodをどのNodeに配置するかを決定するコンポーネントです。
+
+### 動作の流れ
+1. ユーザーがPodを作成
+2. 最初は「どのNodeにも割り当てられていない状態（Pending）」
+3. スケジューラが働いて、クラスタ内の適切なNodeを選択
+4. そのNodeにPodを割り当て
+
+### スケジューラの確認
+```bash
+kubectl get pods -n kube-system
+```
+
+### 手動スケジューリング
+YAMLで`nodeName`を指定することで、特定のノードにPodを配置できます：
+
+```yaml
+spec:
+  nodeName: worker-node-1
+```
+
+### Podの再作成
+YAMLを編集したら、Podは削除して再作成しなければいけませんが、以下のコマンドで再作成できます：
+
+```bash
+kubectl replace --force nginx.yaml
+```
+
+### Podの状態監視
+```bash
+kubectl get pods --watch
+```
+> 💡 **用途**: PodがRunningになるまで監視
+
+## 🏷️ ラベル（Labels）
+
+### ラベルとは
+ラベルは**キー=バリュー**の形式で、リソースにメタデータを付与する仕組みです。
+
+### ラベルでの検索
+```bash
+# セレクターを使用
+kubectl get pods --selector=env=dev
+
+# 短縮形
+kubectl get pods -l=env=dev
+```
+
+### 複数ラベルの指定
+```bash
+kubectl get pod -l=env=prod,bu=finance,tier=frontend
+```
+
+### ラベルでカウント
+```bash
+kubectl get pods --selector=env=dev --no-headers | wc -l
+```
+> ⚠️ **重要**: `--no-headers`を必ず入れる。入れないと一行目のヘッダーもカウントされてしまう
+
+### ReplicaSetのラベル設定
+ReplicaSetのYAML内では、**2つの場所でラベルを定義**する必要があります：
+
+```yaml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: replicaset-1
+spec: # <----ここが、replicasetの定義
+  replicas: 2
+  selector:
+    matchLabels:
+      tier: nginx # レプリカセットのラベル（管理対象の条件）
+  template: # <----ここから、podの定義
+    metadata: 
+      labels:
+        tier: nginx # podのラベル（実際に作成されるPodに付与）
+    spec:
+      containers: 
+      - name: nginx
+        image: nginx
+```
+
+> 💡 **ポイント**: 
+> - `spec.selector.matchLabels` → 管理対象のPodを特定する条件
+> - `spec.template.metadata.labels` → 実際に作成されるPodに付与されるラベル
+> - この2つのラベルは**一致している必要がある**
