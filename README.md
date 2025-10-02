@@ -190,5 +190,12 @@ kubectl get pods -n=
 kubectl get pods --all-namespaces
 kubectl get pods -A
 
+## 命令形コマンド
 
+label付きpod
+kubectl run redis --image=redis:alpine --labels="tier=db"
+
+サービスを命令系で作る→expose
+
+kubectl run httpd --image=httpd:aipine --port=80 --expose=true
 
