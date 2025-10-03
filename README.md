@@ -425,3 +425,181 @@ Shift + V
 >
 で一気にずらせる
 
+## resource limit
+
+メモリ不足
+ OOMKilled
+
+ editでメモリの値を増やすのは不可 実行中のため。
+ しかし、edit失敗しても、yamlが吐き出されるため、それをつかってreplace可能
+ controlplane ~ ➜  kubectl edit pod elephant 
+error: pods "elephant" is invalid
+A copy of your changes has been stored to "/tmp/kubectl-edit-2855789753.yaml"
+error: Edit cancelled, no valid changes were saved.
+
+kubectl replace --force -f /tmp/kubectl-edit-2855789753.yaml
+
+## Daemon set
+
+🔹 DaemonSetとは？
+
+「クラスタ内のすべてのノード、または特定の条件を満たすノードに、必ず1つずつ Pod を配置する仕組み」
+
+DaemonSet は「ノードごとに必ず必要になるエージェント系のワークロード」に使われます。
+
+```
+# daemon set
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: log-agent
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: log-agent
+  template:
+    metadata:
+      labels:
+        app: log-agent
+    spec:
+      containers:
+      - name: log-agent
+        image: fluentd:latest
+```
+Deployment に似ているけど、replicas は指定しない
+
+Pod 数はノード数によって自動的に決まる
+
+ノードが増えると自動でそのノードにも Pod が作られる
+
+ノードが削除されれば、その Pod も消える
+
+もし「全ノードじゃなくて特定のノードだけ」に入れたい場合は
+
+NodeSelector / NodeAffinity を組み合わせる
+
+Tolerations を組み合わせて taint されたノード専用にする
+
+クラスタ内全てのnodeに、一つのpodをつける
+監視エージェントなど
+
+全ての名前空間をみるには -A
+kubectl get daemonsets だけだと、デフォルト名前空間のみ
+
+## static pod
+
+kubeletが直接管理するpod
+API Server / kube-scheduler を経由せず、そのノード上の kubelet によって起動・監視される特殊な Pod。
+マニフェストファイルをノードの特定ディレクトリに置くと、その内容に従って自動的に起動する。
+
+kubelet＝Kubernetes の各ノード上で動くエージェントプロセス。
+APIサーバから渡された指示を受けて、実際にコンテナを起動させる役割
+
+/etc/kubernetes/manifests/
+
+削除方法が特殊
+kubectl delete pod しても消えない（kubelet が再作成する）
+YAML ファイルを消すと停止する
+マスターコンポーネントで利用
+Kubernetes 自体のコア（kube-apiserver, etcd, controller-manager, scheduler）は Static Pod として起動されることが多い
+マニフェスト修正即反映
+ディレクトリ内のファイルを修正すると、自動的に Pod が再作成される
+
+トラブル対応（etcd 落ちた、APIサーバが起動しない） のときに知っておくと役立つ
+
+ kubectl get pods -Aで、末尾にノード名のpodが、static
+
+ cat /var/lib/kubelet/config.yaml 
+ staticPodPath: /etc/just-to-mess-with-you
+ config.yaml
+
+Terminating のまま消えない時は？
+ kubectl delete pod POD名 --grace-period=0 --force
+
+コマンド
+--command --sleep 1000
+
+## Pod Priority
+
+Pod に「優先度」を与える仕組み
+クラスタ内のリソースが足りなくなったとき、どの Pod を優先するかを決める仕組み
+
+```
+# PriorityClass の定義
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 100000
+globalDefault: false
+description: "This priority class should be used for critical pods only."
+
+```
+これを作成後、podに割り当てる
+
+value: 優先度（大きいほど優先される）
+ケジューリング時
+
+高優先度 Pod は、低優先度 Pod よりも先にスケジューリングされる
+
+プリエンプション（追い出し）
+
+ノードに空きがなくても、高優先度 Pod が来ると、低優先度 Pod が強制削除されて場所を譲ることがある
+
+これを Preemption と呼ぶ
+
+名前空間もたない
+
+kubectl get priorityclass
+
+kubectl get pods -o custom-columns="NAME:.metadata.name,PRIORITY:.spec.priorityClassName"
+
+## 複数のスケジューラ
+
+普段は、デフォルトのスケジューラが、いい感じにやってくれている。(kube-scheduler)
+クラスタに、複数のスケジューラをデプロイできる
+→独自のスケジューラアルゴリズムで、ノードにpodを配置したいとき
+
+podのspecに、スケジューラ名を書けば、複数のスケジューラを同時に動かせる
+schedulerName: スケジューラ
+
+## admission controller
+
+Kubernetes で Pod や Deployment を作るとき、APIサーバー にリクエストが届きます。
+APIサーバーはこのリクエストを
+受け取る
+認証/認可チェック（この人操作していい？）
+etcd に保存
+の流れで処理します。
+この途中に「チェックマン」や「修正マン」を挟めるのが Admission Controller です。
+Admission Controller とは？
+
+「リクエストを受けたときに、クラスタに保存される前にチェックしたり書き換えたりする仕組み」
+Validating（検証系）
+
+「この Pod、セキュリティポリシー違反してない？」
+
+例：root 権限で動かそうとしていたら「ダメ！」と拒否する。
+
+Mutating（書き換え系）
+
+「設定が足りないから自動で補っておくね」
+
+例：Pod にデフォルトの sidecar（ログ収集コンテナ）を勝手に追加する。
+
+APIサーバーにリソースが保存される前のゲートキーパー
+役割は「チェック（Validating）」と「自動修正（Mutating）」
+
+kube-apiserver -h | grep enable-admission-plugins
+
+アドミッションコントローラは認証何もしない
+
+有効化されていないaddmission controlerを調べる
+kubectl get pods -n kube-system
+kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h | grep 'enable-admission-plugins'
+
+
+
+
+
