@@ -325,3 +325,103 @@ spec: # <----ここが、replicasetの定義
 > - `spec.selector.matchLabels` → 管理対象のPodを特定する条件
 > - `spec.template.metadata.labels` → 実際に作成されるPodに付与されるラベル
 > - この2つのラベルは**一致している必要がある**
+
+## taintとToleration
+
+Taint = ノード側のルール
+「このノードは普通のPodはダメ」
+
+Toleration = Pod側の許可証
+「私はこのルールを無視してもOK」
+
+kubectl taint nodes node1 dedicated=experimental:NoSchedule
+
+tolerations:
+- key: "dedicated"
+  operator: "Equal"
+  value: "experimental"
+  effect: "NoSchedule"
+
+kubectl taint node node01 spray=mortein:NoSchedule
+
+削除するときは
+kubectl taint node node01 spray=mortein:NoSchedule-
+
+トレレーションは、yamlでしか設定できない
+
+operetion
+Equal → value まで一致する必要あり（厳格）
+
+Exists → key が一致すれば OK（ゆるめ）
+
+Exists のときに value 書くとエラーになる
+
+## Node Selector＆Node Affinity
+
+Pod側がここに配置したいと希望する仕組み
+taintだけでは禁止のみで、他のnodeに配置されてしまう可能性があるため
+
+```
+# Node Affinity
+# 必ず「zone=us-east-1a」のノードに置きたい
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution: # 必須条件を表す
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: zone
+          operator: In
+          values:
+          - us-east-1a
+
+```
+
+```
+# Node Affinity
+# 「disk=ssd」があればそっちに置いてほしいけど、なければ他でもOK
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution: # 優先条件（あれば嬉しい）
+    - weight: 1
+      preference:
+        matchExpressions:
+        - key: disk
+          operator: In
+          values:
+          - ssd
+```
+
+Operatorが、演算子
+In → 指定した値のいずれかに一致する
+NotIn → 指定した値には含まれない
+Exists → key があればマッチ
+DoesNotExist → key がなければマッチ
+
+Node Affinity と NodeSelector の違い
+
+NodeSelector
+シンプルに key=value だけで指定できる（古い方式）。
+
+nodeSelector:
+  disktype: ssd
+
+→ シンプルだけど柔軟性がない。
+
+Node Affinity
+NodeSelector の上位互換。
+複数条件や In/NotIn/Exists が使える。
+
+Node Affinity
+→ Pod が「ここに置きたい！」と希望する。
+
+Taint/Toleration
+→ ノードが「俺は特殊だから勝手に来るなよ」と制限する。
+両方組み合わせると「特定のPodだけ特定ノードに入る」という厳密な制御ができる。
+
+taint設定のみ抜き出す
+kubectl describe node node1 | grep taints
+
+Shift + V
+>
+で一気にずらせる
+
