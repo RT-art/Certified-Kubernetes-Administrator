@@ -615,6 +615,8 @@ KubernetesでPodやDeploymentを作るとき、APIサーバーにリクエスト
 - **APIサーバーにリソースが保存される前のゲートキーパー**
 - 役割は「チェック（Validating）」と「自動修正（Mutating）」
 
+> 💡 **注意**: Admission Controllerは認証は何もしません
+
 ### 確認コマンド
 ```bash
 # 有効化されているAdmission Controllerを確認
@@ -624,10 +626,265 @@ kube-apiserver -h | grep enable-admission-plugins
 kubectl get pods -n kube-system
 kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h | grep 'enable-admission-plugins'
 ```
+exec: 実行中のPod内でコマンドを実行する
+### 各部分の説明
 
-> 💡 **注意**: Admission Controllerは認証は何もしません
+#### 1. `kubectl exec -it`
+- **exec**: 実行中のPod内でコマンドを実行する
+- **-it**: インタラクティブ（-i）でターミナル（-t）を割り当てる
+  - 標準入出力を接続して、コマンドの結果を表示
 
+#### 2. `kubeapiserver-controlplane`
+- **対象のPod名**: kube-apiserverが動いているPod
+- このPod内でコマンドを実行する
 
+#### 3. `-n kube-system`
+- **namespace指定**: kube-system名前空間内のPodを対象とする
+- kube-apiserverは通常kube-system名前空間で動いている
 
+#### 4. `--`
+- **区切り文字**: kubectlのオプションと、Pod内で実行するコマンドを分ける
+- `--`以降はPod内で実行されるコマンド
 
+#### 5. `kube-apiserver -h`
+- **kube-apiserver**: Kubernetes APIサーバーのバイナリ
+- **-h**: ヘルプオプション（--helpと同じ）
+- 利用可能なオプション一覧を表示
+
+#### 6. `| grep 'enable-admission-plugins'`
+- **パイプ**: 前のコマンドの出力を次のコマンドに渡す
+- **grep**: 指定した文字列を含む行のみを抽出
+- **'enable-admission-plugins'**: Admission Controllerの有効化オプションを検索
+
+## 🎯 このコマンドの目的
+
+### 何を調べているか
+- **有効化されているAdmission Controller**を確認
+- kube-apiserverがどのAdmission Controllerを使用しているかを調べる
+
+### なぜこの方法を使うか
+- kube-apiserverは**Static Pod**として動いている
+- 設定ファイルを直接見るよりも、実際に動いているプロセスのオプションを確認する方が確実
+
+## 📋 実行結果の例
+
+```bash
+--enable-admission-plugins strings
+                          admission plugins that should be enabled in addition to default enabled ones (NamespaceLifecycle, LimitRanger, ServiceAccount, TaintNodesByCondition, Priority, DefaultTolerationSeconds, DefaultStorageClass, StorageObjectInUseProtection, PersistentVolumeClaimResize, MutatingAdmissionWebhook, ValidatingAdmissionWebhook, ResourceQuota). Comma-delimited list of admission plugins: AlwaysAdmit, AlwaysDeny, AlwaysPullImages, DefaultStorageClass, DefaultTolerationSeconds, DenyEscalatingExec, DenyExecOnPrivileged, EventRateLimit, ExtendedResourceToleration, ImagePolicyWebhook, Initializers, LimitPodHardAntiAffinityTopology, LimitRanger, MutatingAdmissionWebhook, NamespaceAutoProvision, NamespaceExists, NamespaceLifecycle, NodeRestriction, OwnerReferencesPermissionEnforcement, PersistentVolumeClaimResize, PersistentVolumeLabel, PodNodeSelector, PodPreset, PodSecurityPolicy, PodTolerationRestriction, Priority, ResourceQuota, SecurityContextDeny, ServiceAccount, StorageObjectInUseProtection, TaintNodesByCondition, ValidatingAdmissionWebhook. The order of plugins in this flag does not matter.
+```
+
+## 💡 実用的な使い方
+
+### トラブルシューティング
+```bash
+# 特定のAdmission Controllerが有効かどうか確認
+kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h | grep -A 5 -B 5 'PodSecurityPolicy'
+```
+
+### 設定確認
+```bash
+# 現在のAdmission Controller設定を確認
+kubectl get pod kubeapiserver-controlplane -n kube-system -o yaml | grep -A 10 -B 10 'enable-admission-plugins'
+```
+
+## 🔧 関連コマンド
+
+```bash
+# より詳細な情報を取得
+kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h | grep -A 20 'enable-admission-plugins'
+
+# 無効化されているAdmission Controllerも確認
+kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h | grep 'disable-admission-plugins'
+```
+
+このコマンドは、Kubernetesクラスタの**セキュリティポリシー**や**リソース制限**がどのように設定されているかを調べる際に非常に有用です！
+
+## 🔍 kube-apiserverとAdmission Controllerの関係
+
+### kube-apiserver内にAdmission Controllerがある理由
+
+#### 1. **アーキテクチャ上の理由**
+```
+API Request → kube-apiserver → Admission Controller → etcd
+```
+
+- **kube-apiserver**は全てのAPIリクエストの**入り口**
+- リクエストがetcdに保存される**直前**でチェック・修正が必要
+- そのため、kube-apiserver**内に**Admission Controllerが組み込まれている
+
+#### 2. **処理の流れ**
+1. クライアントがAPIリクエストを送信
+2. kube-apiserverが受信
+3. **認証・認可**をチェック
+4. **Admission Controller**で検証・修正 ← ここ！
+5. etcdに保存
+
+### なぜkube-apiserverコマンドを使うのか
+
+#### 1. **設定確認のため**
+```bash
+# 実際に動いているkube-apiserverの設定を確認
+kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h
+```
+
+- kube-apiserverは**Static Pod**として動いている
+- 設定ファイルを見るよりも、**実際のプロセス**のオプションを確認する方が確実
+
+#### 2. **利用可能なAdmission Controller一覧**
+```bash
+kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h | grep 'enable-admission-plugins'
+```
+
+このコマンドで分かること：
+- どのAdmission Controllerが**利用可能**か
+- どのAdmission Controllerが**デフォルトで有効**か
+- どのAdmission Controllerを**追加で有効化**できるか
+
+## 📋 デフォルトで有効なAdmission Controller
+
+```bash
+# デフォルトで有効なもの
+NamespaceLifecycle
+LimitRanger
+ServiceAccount
+TaintNodesByCondition
+Priority
+DefaultTolerationSeconds
+DefaultStorageClass
+StorageObjectInUseProtection
+PersistentVolumeClaimResize
+MutatingAdmissionWebhook
+ValidatingAdmissionWebhook
+ResourceQuota
+```
+
+## 🔧 他の確認方法との比較
+
+### 1. **設定ファイルを直接見る方法**
+```bash
+# Static Podの設定ファイル
+cat /etc/kubernetes/manifests/kube-apiserver.yaml
+```
+> **問題**: 設定ファイルと実際の動作が異なる場合がある
+
+### 2. **Podの設定を確認**
+```bash
+kubectl get pod kubeapiserver-controlplane -n kube-system -o yaml
+```
+> **問題**: 長すぎて見づらい
+
+### 3. **kube-apiserverコマンドを使う方法** ← **推奨**
+```bash
+kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h | grep 'enable-admission-plugins'
+```
+> **利点**: 実際に動いているプロセスの設定を確認できる
+
+## 💡 実用的な使い方
+
+### トラブルシューティング
+```bash
+# 特定のAdmission Controllerが有効かどうか確認
+kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h | grep -A 5 -B 5 'PodSecurityPolicy'
+```
+
+### セキュリティポリシーの確認
+```bash
+# セキュリティ関連のAdmission Controllerを確認
+kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h | grep -i security
+```
+
+## 🎯 まとめ
+
+- **kube-apiserver内にAdmission Controllerがある**のは、アーキテクチャ上の必然
+- **kube-apiserverコマンドを使う**のは、実際の設定を確認するため
+- 設定ファイルを見るよりも、**実際に動いているプロセス**のオプションを確認する方が確実
+
+つまり、kube-apiserverコマンドを使うのは「設定確認のため」であり、Admission Controllerがkube-apiserver内にあるのは「処理の流れ上、そこにしか置けない」からです！
+
+## 📊 Logging
+
+### kubectl top
+```bash
+# Podのリソース使用量を確認
+kubectl top pods
+
+# ノードのリソース使用量を確認
+kubectl top nodes
+
+# 特定の名前空間のPodを確認
+kubectl top pods -n kube-system
+```
+
+> ⚠️ **前提条件**: **メトリクスサーバ**が動いている必要がある
+
+#### メトリクスサーバの確認
+```bash
+# メトリクスサーバが動いているか確認
+kubectl get pods -n kube-system | grep metrics-server
+
+# メトリクスサーバの詳細確認
+kubectl describe pod metrics-server-xxx -n kube-system
+```
+
+### kubectl logs
+```bash
+# Podのログを確認
+kubectl logs <pod-name>
+
+# 特定のコンテナのログを確認
+kubectl logs <pod-name> -c <container-name>
+
+# リアルタイムでログを追跡
+kubectl logs -f <pod-name>
+
+# 過去のログも含めて確認
+kubectl logs --previous <pod-name>
+
+# 特定の行数だけ表示
+kubectl logs --tail=100 <pod-name>
+
+# 特定の時間以降のログを表示
+kubectl logs --since=1h <pod-name>
+```
+
+### ログの実用的な使い方
+
+#### トラブルシューティング
+```bash
+# エラーログを検索
+kubectl logs <pod-name> | grep -i error
+
+# 特定のパターンを検索
+kubectl logs <pod-name> | grep "connection refused"
+
+# 複数のPodのログを同時に確認
+kubectl logs -l app=nginx
+```
+
+#### ログの保存
+```bash
+# ログをファイルに保存
+kubectl logs <pod-name> > pod-logs.txt
+
+# 複数のPodのログを保存
+kubectl logs -l app=nginx > nginx-logs.txt
+```
+
+### ログレベルの設定
+```yaml
+# Podの環境変数でログレベルを設定
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+spec:
+  containers:
+  - name: my-container
+    image: nginx
+    env:
+    - name: LOG_LEVEL
+      value: "debug"
+```
+
+> 💡 **ヒント**: アプリケーションによってログレベルの設定方法が異なります。詳細は各アプリケーションのドキュメントを確認してください。
 
