@@ -697,7 +697,7 @@ kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h 
 kubectl exec -it kubeapiserver-controlplane -n kube-system -- kube-apiserver -h | grep 'disable-admission-plugins'
 ```
 
-このコマンドは、Kubernetesクラスタの**セキュリティポリシー**や**リソース制限**がどのように設定されているかを調べる際に非常に有用です！
+このコマンドは、Kubernetesクラスタの**セキュリティポリシー**や**リソース制限**がどのように設定されているかを調べる際に非常に有用
 
 ## 🔍 kube-apiserverとAdmission Controllerの関係
 
@@ -888,3 +888,53 @@ spec:
 
 > 💡 **ヒント**: アプリケーションによってログレベルの設定方法が異なります。詳細は各アプリケーションのドキュメントを確認してください。
 
+## deploy update
+
+ailias設定
+alias k="kubectl"
+
+pod内コマンド
+kubectl run webapp-green --image=kodekloud/webapp-color --color=green
+
+multi container
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pods
+  labels:
+    run: pods
+spec:
+  containers:
+    - name: lemon
+      image: busybox
+      command: ['sleep', '1000']
+      resources: {}
+    - name: gold
+      image: redis
+      resources: {}
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+
+initコンテナ
+https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+
+サイドカーコンテナ
+https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
+
+k get hpa
+
+## maintenance
+
+そのノード上にあるPodを**他のノードに退避（削除→再スケジュール）**させる
+つまり、「メンテナンスしたいから、一旦このノードを空っぽにしたい」って時に使う
+k drain node01
+
+k uncordon node01
+つまり、cordonの逆コマンド。
+これを実行すると、再びスケジューラがPodをそのノードに割り当てるようになる。
+
+replicasetでない、純粋なpodがあると、drainできない
+
+k cordon node01
+ノードを“これ以上スケジュール禁止”にする。
