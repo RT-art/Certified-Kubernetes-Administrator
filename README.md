@@ -1201,6 +1201,86 @@ netstat -npa | grep -i etcd | grep -i 2379
 
 ssでもいい
 
+CNI
+ノードでCNI関連の設定を確認するには：
+ls /etc/cni/net.d/
+→ CNIの設定ファイル（例：10-calico.conflist など）がある
+
+ip a
+→ Podネットワーク用の仮想インターフェース（cni0など）が見える
+
+kubectl get pods -A -o wide
+→ PodがどのIPを持っているか確認できる（CNIで割り当てられている）
+
+動いているプロセス（=実行中のプログラム）」を一覧表示するコマンド
+ps -aux
+
+kubelet の設定内容を調べて、コンテナランタイムが何かを確認する
+
+kubelet
+Node（ノード）でPodを動かすためのエージェント
+kubelet は「Nodeの管理人」。
+Kubernetes本部（APIサーバ）からの命令を受けて、
+コンテナを実際に作業員（container runtime）に作らせる。
+
+container runtime
+containerdが主流
+kubelet はコンテナを直接作りません。
+→ 「container runtimeにお願いして」 コンテナを作ってもらいます。
+
+endpoint（エンドポイント）とは？
+「kubeletがcontainer runtimeと通信するための入り口」 です。
+
+systemd は Linux の「サービス管理ツール」です。
+Windowsでいう「サービスマネージャー」にあたります。
+kubelet は OSレベルの「サービス」として常駐
+
+/var/lib/kubelet/config.yaml
+にkubelet の設定ファイルある
+
+ls /opt/cni/bin/
+
+controlplane ~ ➜  ls /etc/cni/net.d/
+10-flannel.conflist
+→これでCNIはFlannel
+
+問題の挙動	frontend → backend の curl が成功してしまった
+期待する挙動	deny-backend ポリシーで通信拒否される
+実際の原因	CNI プラグイン（Flannel）が NetworkPolicy 非対応
+解決策	Calico や Cilium のような policy-aware CNI に切り替える
+
+daemonset削除
+cofigmap削除
+rm -rf /etc/cni
+
+kube-proxy が必要なの？
+Kubernetes では、Pod は常に消えたり増えたりするため、
+Service という仮想的なIP（ClusterIP）でPodのグループを代表させています。
+
+kube-proxy の役割
+各ノード上で動くデーモン（DaemonSetとして常駐）
+
+この中の「NodePort → ClusterIP → PodIP」への転送を
+iptables または ipvs ルールで設定してるのが kube-proxy です。
+
+外部クライアント
+     │
+     ▼
+(Node外)
+ ┌──────────────┐
+ │ Node PublicIP:NodePort  ← NodePort Service
+ └──────────────┘
+     │
+     ▼
+[ kube-proxy ]
+  │ （iptables/ipvs）
+  ▼
+ClusterIP (仮想IP)
+  │
+  ▼
+PodIP（実際のPod、可変）
+
+ingress
 
 
 
