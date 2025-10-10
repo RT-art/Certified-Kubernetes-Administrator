@@ -886,8 +886,6 @@ spec:
       value: "debug"
 ```
 
-> 💡 **ヒント**: アプリケーションによってログレベルの設定方法が異なります。詳細は各アプリケーションのドキュメントを確認してください。
-
 ## deploy update
 
 ailias設定
@@ -938,3 +936,271 @@ replicasetでない、純粋なpodがあると、drainできない
 
 k cordon node01
 ノードを“これ以上スケジュール禁止”にする。
+
+ETCDCTL_API=3 etcdctl snapshot save /opt/snapshot-pre-boot.db \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key
+
+
+## security
+
+証明書ファイルのパス
+etc/kubernetes/manifests/から見る
+
+ca.crt：証明書を発行する側（信頼の親）
+server.crt：証明書を使う側（本人）
+
+このapiserver.crtは、俺が信頼しているca.crtによって署名されてるから安全だな👌
+ca.crtを信用している限り、それが署名した他の証明書も信用できるという連鎖的な信頼構造
+
+/etc/kubernetes/pki/ca.crt → クラスタ全体で使う信頼の“根”
+/etc/kubernetes/pki/apiserver.crt → そのCAが署名したAPIサーバー証明書
+
+CN（Common Name）
+証明書の「この証明書は誰のものか」を示す識別名
+Kubernetesでは、apiserver.crt は kubeadm によって自動生成され、
+通常 CN=kube-apiserver として作られます。
+
+証明書の「発行者（Issuer）」と「所有者（Subject）がある
+Issuer: CN = kubernetes 
+Validity Not Before: Oct 7 03:51:30 2025 GMT Not After : Oct 7 03:56:30 2026 GMT 
+Subject: CN = kube-apiserver
+
+SAN（Subject Alternative Name）
+SSL証明書には「この証明書はどんな名前（ドメイン）でアクセスされたときに有効なのか
+SAN は “Subject Alternative Name”（別名）という意味で、
+「この証明書はこの名前たちにも有効だよ」
+というリストを持てる仕組みです。
+CN = kube-apiserver
+SAN = kubernetes, kubernetes.default, kubernetes.default.svc, ...
+
+Kubernetes でのSANの重要性
+
+KubernetesのAPIサーバは、いろんな経路・名前でアクセスされます。
+
+Pod 内部から → kubernetes.default.svc
+
+管理者から → controlplane（ノード名）
+
+kubeletから → 10.96.0.1（ClusterIP）
+
+そのどれもで「証明書が一致」しないと通信が拒否されてしまう。
+
+だからAPIサーバの証明書には、複数のDNS名とIPアドレスがSANとして登録されている
+
+/etc/kubernetes/pki/
+Public Key Infrastructure の略
+/etc/kubernetes/pki/ は、Kubernetes クラスターの心臓部の証明書置き場
+
+覚えておくと強いポイント
+
+kubeadm で作られる証明書は基本1年有効
+kubeadm certs check-expiration で期限確認できる
+ca.crt だけ10年有効（他の証明書を署名し続けるため）
+
+全部削除すると、クラスタが完全に動かなくなる⚠️
+APIサーバーが etcd に繋げなくなる
+kubelet が API サーバーに認証できなくなる
+
+復旧する時は kubeadm certs renew コマンドが便利
+kubeadm certs renew all
+
+kubectl使えないときは、dockerコマンドか、crictlで、ログ見る
+
+## kubeconfig
+クラスターへの「接続情報」と「認証情報」をひとまとめにしたもの
+~/.kube/config にだいたい保存されている
+kubectl get pods
+って打つと、kubectl は kubeconfig を見て「どの API サーバーに」「どの権限のユーザーで」アクセスするかを決めてる。
+### 現在のコンテキストを確認
+kubectl config current-context
+
+### 利用可能なコンテキストを一覧表示
+kubectl config get-contexts
+
+### コンテキストを切り替える
+kubectl config use-context my-context
+
+🔹 cluster → 行き先（どの Kubernetes 環境か）
+🔹 user → 身分証明（誰として入るか）
+🔹 namespace → 対象の作業エリア（どこの部署を見るか）
+🔹 context → その３つのセット
+🔹 current-context → 今使ってるセット
+
+echo 'export KUBECONFIG=$HOME/my-kube-config:$HOME/.kube/config' >> ~/.bashrc
+source ~/.bashrc
+
+## RBAC
+RBACは4つの主要なオブジェクトで構成されます：
+
+種類	役割	スコープ
+Role	名前空間単位の権限定義	Namespace
+ClusterRole	クラスタ全体の権限定義	Cluster全体
+RoleBinding	RoleをユーザやServiceAccountに紐づける	Namespace
+ClusterRoleBinding	ClusterRoleをユーザやServiceAccountに紐づける	Cluster全体
+
+k create role
+
+kubectl auth
+
+kubectl auth reconcile
+
+## コンテナ、pod単位のセキュリティ
+
+securityContext:
+      runAsUser: 0  # Rootユーザーで実行
+      capabilities:
+        add: ["SYS_TIME"] 
+
+コンテナごとに権限を細かく制御する仕組みとして securityContext
+
+Linuxの権限（Capabilities）をコンテナに追加する方法
+
+
+## volumes
+
+基礎となるマニフェスト書き方（コマンドではなく、volumeは全てマニフェストに直）
+```
+- mountPath: /log
+      name: log
+~
+ volumes:
+  - name: log
+    hostPath:
+      path: /var/log/webapp
+```
+
+ブックマーク
+https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistent-volumes
+
+永続ボリューム定義
+```
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-log
+spec:
+  capacity:
+    storage: 100Mi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: slow
+  mountOptions:
+    - hard
+    - nfsvers=4.1
+  hostPath:
+    path: /pv/log
+```
+
+永続ボリュームクレーム
+```
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: claim-log-1
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Mi
+  volumeMode: Filesystem
+```
+pvとpvcの違い
+基本的に PersistentVolume（PV）と PersistentVolumeClaim（PVC）はセット
+PVを手で作っておき、PODがPVCで要求する。両方セットで定義。
+
+PVで棚を作る
+PVCで、k8sが、条件に合った棚を見つける
+PVとPVCは、条件一致でないといけない
+
+strageclass
+https://kubernetes.io/docs/concepts/storage/storage-classes/#local
+
+Pod は自分でストレージを直接作りません。
+→ 代わりに「PersistentVolumeClaim（PVC）」を使って「ストレージちょうだい！」とお願いする。
+
+PVC は「このStorageClassでお願い」と言う。
+→ StorageClass が「OK、じゃあEBSを自動で作るね！」と動く。
+
+PersistentVolume（PV） が自動的に作られてPodに渡される。
+→ これが実際のディスク。
+
+```
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-storage
+provisioner: kubernetes.io/aws-ebs
+parameters:
+  type: gp3
+reclaimPolicy: Delete
+```
+provisioner:
+どの仕組みでストレージを作るか
+
+parameters:
+ type: gp3
+EBSを作るときの細かい設定。
+
+reclaimPolicy: Delete
+「ストレージを削除するときどうするか」
+delete,retain
+
+pvcのpendingとは
+まだ使えるストレージ（PV）が見つかってない状態
+
+## Networking
+
+ネットワーク基礎のlinuxコマンド
+
+SSHで各ノードに入ったときに、「そのノードがどんなIP設定になっているか」を調べたい時
+sshで各nodeに入る
+```
+ip address
+ip address show eth0
+```
+
+CNI（Container Network Interface）
+コンテナにネットワーク（IPアドレス・通信経路）を与えるための仕組み・ルール
+
+Podが作られるとき、KubernetesはCNIにこう頼みます：
+「このPodにネットワークインターフェース（NIC）を作って、IPアドレスを割り当てて、他のPodとも通信できるようにして！
+
+コンテナ（Pod）内に仮想NICを作る（例: eth0）
+そのNICにIPを割り当てる（例: 10.244.0.5）
+ノードのネットワーク（例: caliXYZ, flannel.1）と接続
+Pod間・Service間通信ができるようルーティングを設定
+
+Podが作られるとき、KubernetesはCNIにこう頼みます：
+「このPodにネットワークインターフェース（NIC）を作って、IPアドレスを割り当てて、他のPodとも通信できるようにして！」
+
+ip route
+ルーティングテーブル（経路表）」 を見るコマンド
+```
+default via 10.0.1.1 dev eth0
+10.0.1.0/24 dev eth0 proto kernel scope link src 10.0.1.23
+10.244.0.0/16 via 10.0.1.100 dev eth0
+```
+一行目デフォゲ
+
+nodeで今どんな通信が発生しているか」「どんなポートが開いているか」 を調べるためのコマンド
+netstat
+
+netstat -npl | 
+オプション	意味
+-n	ホスト名を名前解決せずに、数値(IPアドレス) で表示（速い＆見やすい）
+-p	どの プロセス（PID/プログラム名） がそのポートを使っているかを表示
+-l	「LISTEN」状態、つまり 待ち受け中のポートだけ を表示
+
+netstat -npa | grep -i etcd | grep -i 2379
+
+ssでもいい
+
+
+
+
